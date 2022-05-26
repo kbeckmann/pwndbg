@@ -127,7 +127,7 @@ def findptr(address=None, skip=None):
 
     # print(len(mem_addr_to_data))
     # for k, v in enumerate(mem_addr_to_data):
-    #     print(f"  {v:016x}: {len(mem_addr_to_data[v])}")
+    #     print(f"  {v:x}: {len(mem_addr_to_data[v])}")
 
     ##########
 
@@ -157,24 +157,22 @@ def findptr(address=None, skip=None):
             return None
 
 
-    def recurse(addr, history, depth, dig=True):
-        if depth > 128:
+    def recurse(addr, history, path, dig=True, offset=0):
+        if len(history) > 128:
             return None
         if not is_mapped(addr, pages):
             return None
         if addr in history:
-            # print("Skipped (history)", hex(addr))
             return None
 
-        depth += 1
         history.append(addr)
 
         stack_ptrs = find_in_stack(addr)
         if stack_ptrs is not None:
             print("WIN condition:")
             for a in stack_ptrs:
-                print(f"  0x{a:016x}")
-            return (stack_ptrs, history)
+                print(f"  0x{a:x}")
+            return (stack_ptrs, history, path)
 
         # t0 = time.time()
         addresses = find_in_ram(addr)
@@ -182,14 +180,16 @@ def findptr(address=None, skip=None):
 
         if len(addresses) > 0:
             for a in addresses:
-                print(f"  found 0x{a:016x} => 0x{addr:016x}")
-                ret = recurse(a, history.copy(), depth)
+                print(f"  found 0x{a:x} => 0x{addr:x}")
+                if offset > 0:
+                    path.append((addr, offset))
+                path.append((addr, 0))
+                ret = recurse(a, history.copy(), path.copy())
                 if ret is not None:
                     return ret
         elif dig:
-            for x in range(64):
-                # print("Digging", hex(addr - 8*x))
-                ret = recurse(addr - 8*x, history.copy(), depth, False)
+            for x in range(256):
+                ret = recurse(addr - 8*x, history.copy(), path.copy(), False, 8*x)
                 if ret is not None:
                     return ret
 
@@ -197,13 +197,33 @@ def findptr(address=None, skip=None):
 
 
     history = []
-    found_addr, history_out = recurse(address, history, 0)
-    # print(found_addr)
-    for a in found_addr:
-        print(f"Found address: 0x{a:016X}")
+    path = []
+    out = recurse(address, history, path)
+    if out is not None:
+        found_addr, history_out, path_out = out
+        # print(found_addr)
+        for a in found_addr:
+            print(f"Found address: 0x{a:x} ($rsp - {hex(pwndbg.regs.rsp - a)})")
 
-    for a in history_out:
-        print(f"History: 0x{a:016X}")
+        for a in history_out:
+            print(f"History: 0x{a:x}")
+
+        for a in path_out:
+            ptr, offset = a
+            print(f"Access: 0x{ptr:x} + 0x{offset:x}")
+
+        chain_pre = "(* _varhax"
+        chain_post = ")"
+        for a in path_out[::-1]:
+            ptr, offset = a
+            chain_pre = "(* (" + hex(offset // 8) + " + " + chain_pre
+            chain_post += "))"
+        typename = f"uint64_t {'*' * (len(path_out) + 1)}"
+        print(f"uint64_t stack_diff = $rsp - {hex(pwndbg.regs.rsp - found_addr[0])};")
+        print(f"{typename} _varhax = ({typename}) {hex(found_addr[0])};")
+        print(f"uint64_t varhax = {chain_pre}{chain_post};")
+
+
 
 
 
@@ -229,7 +249,7 @@ def findclass(address=None, offset=8):
     g_objects = pwndbg.symbol.address("__g_objects")
     for i in range(1024):
         addr = g_objects + i * 8 * 3
-        # print(f"{addr:016x}")
+        # print(f"{addr:x}")
         ptr = int(pwndbg.memory.poi(pwndbg.typeinfo.pvoid, addr))
         if ptr == 0:
             continue
@@ -242,15 +262,15 @@ def findclass(address=None, offset=8):
             "name":name,
             "size":size,
         }
-        # print(f"0x{ptr:016x} - 0x{ptr + size:016x}: {name}")
+        # print(f"0x{ptr:x} - 0x{ptr + size:x}: {name}")
         objects[ptr] = obj
 
     for key in objects.keys():
         obj = objects[key]
-        # print(f"Is {address:016x} between {obj['start']:016x} and {obj['end']:016x}?")
+        # print(f"Is {address:x} between {obj['start']:x} and {obj['end']:x}?")
         if address >= obj["start"] and address < obj["end"]:
-            print(f"0x{address:016x} is inside the range of {obj['name']}")
-            print(f"Start: 0x{obj['start']:016x}")
+            print(f"0x{address:x} is inside the range of {obj['name']}")
+            print(f"Start: 0x{obj['start']:x}")
             break
 
 
