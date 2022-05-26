@@ -20,6 +20,7 @@ import pwndbg.commands.comments
 import pwndbg.commands.config
 import pwndbg.commands.context
 import pwndbg.commands.cpsr
+import pwndbg.commands.crawl
 import pwndbg.commands.dt
 import pwndbg.commands.dumpargs
 import pwndbg.commands.elf
