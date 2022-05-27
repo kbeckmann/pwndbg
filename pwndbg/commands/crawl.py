@@ -29,10 +29,12 @@ parser = argparse.ArgumentParser()
 parser.description = """
     Find a stack entry that can reach an address by deep indirection.
     """
-parser.add_argument("address", type=int, nargs="?", default=0, help="The address to reach.")
-parser.add_argument("skip", type=str, nargs="?", default=None, help="Comma-separated pages to skip, e.g. '0x123,0x456'")
+parser.add_argument("address", type=int, default=0, help="The address to reach")
+parser.add_argument("skip", type=str, nargs='?', default=None, help="Comma-separated page to skip, e.g. '0x123,0x456'")
+parser.add_argument("max_depth", type=int, nargs='?', default=16, help="Depth limit of the indirection chain")
+parser.add_argument("max_lookback", type=int, nargs='?', default=256, help="Max number of qwords to look behind")
 @pwndbg.commands.ArgparsedCommand(parser)
-def findptr(address=None, skip=None):
+def findptr(address=None, skip=None, max_depth=16, max_lookback=256):
     """
     Findptr
     """
@@ -95,7 +97,7 @@ def findptr(address=None, skip=None):
 
 
     def recurse(addr, history, path, dig=True, offset=0):
-        if len(history) > 128:
+        if len(history) > max_depth:
             return None
         if not is_mapped(addr, pages):
             return None
@@ -125,7 +127,7 @@ def findptr(address=None, skip=None):
                 if ret is not None:
                     return ret
         elif dig:
-            for x in range(256):
+            for x in range(max_lookback):
                 ret = recurse(addr - 8*x, history.copy(), path.copy(), False, 8 * x)
                 if ret is not None:
                     return ret
