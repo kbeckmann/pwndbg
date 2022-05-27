@@ -152,8 +152,12 @@ def findptr(address=None, skip=None):
         chain_post = ")"
         for a in path_out[::-1]:
             ptr, offset = a
-            chain_pre = "(* (" + hex(offset // 8) + " + " + chain_pre
-            chain_post += "))"
+            if offset == 0:
+                chain_pre = "(* " + chain_pre
+                chain_post += ")"
+            else:
+                chain_pre = "(* (" + hex(offset // 8) + " + " + chain_pre
+                chain_post += "))"
         typename = f"uint64_t {'*' * (len(path_out) + 1)}"
         print(f"uint64_t stack_diff = $rsp - {hex(pwndbg.regs.rsp - found_addr[0])};")
         print(f"{typename} _varhax = ({typename}) {hex(found_addr[0])};")
