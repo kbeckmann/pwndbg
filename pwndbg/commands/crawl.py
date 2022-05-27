@@ -29,8 +29,8 @@ parser = argparse.ArgumentParser()
 parser.description = """
     Find a stack entry that can reach an address by deep indirection.
     """
-parser.add_argument("address", type=int, nargs="?", default=0, help="The address of the member.")
-parser.add_argument("skip", type=str, nargs="?", default=None, help="Skip pages start addr (0x123,0x456")
+parser.add_argument("address", type=int, nargs="?", default=0, help="The address to reach.")
+parser.add_argument("skip", type=str, nargs="?", default=None, help="Comma-separated pages to skip, e.g. '0x123,0x456'")
 @pwndbg.commands.ArgparsedCommand(parser)
 def findptr(address=None, skip=None):
     """
@@ -46,18 +46,17 @@ def findptr(address=None, skip=None):
 
     pages = pwndbg.vmmap.get()
 
-    # calculate total size of mapped memory
+    # Extract the maps we care about
     mappings = []
     mapped_mem_size = 0
     for page in pages:
         if not ('[heap' in page.objfile or '[anon' in page.objfile):
             continue
         if int(page.vaddr) in skip_pages:
-            # print(f"Skipping 0x{page.vaddr:x}")
             continue
         mappings.append(page)
         mapped_mem_size += page.memsz
-    print(f"{mapped_mem_size=}")
+    print(f"{mapped_mem_size=} bytes")
 
     # Find the stack page
     for page in pages:
@@ -65,90 +64,28 @@ def findptr(address=None, skip=None):
             stack = page
             break
 
-    # rsp = 
+    assert(stack is not None)
     stack_start = stack.vaddr
     stack_size = stack.memsz
 
-    # Read the whole stack into maps
-    stack_data = pwndbg.memory.read(stack_start, stack_size)
-    stack_uint64 = list(struct.unpack(f"<{stack_size // 8}Q", stack_data))
-    stack_addr_to_data = {}
+    # Read the whole stack into a map of {value:[addresses]}
+    stack_bytes = pwndbg.memory.read(stack_start, stack_size)
+    stack_uint64 = list(struct.unpack(f"<{stack_size // 8}Q", stack_bytes))
     stack_data_to_addr = {}
     for i, val in enumerate(stack_uint64):
         addr = stack.vaddr + i * 8
-        stack_addr_to_data[addr] = val
         if val in stack_data_to_addr:
             stack_data_to_addr[val].append(addr)
         else:
             stack_data_to_addr[val] = [addr]
 
-    # for i, key in enumerate(stack_data_to_addr):
-    #     print(f"{key:08x}: {len(stack_data_to_addr[key])}")
-
-    # Skip for now!
-    # Read all mapped memory (except the stack) into maps
-    # mem_addr_to_data = {}
-    # mem_data_to_addr = {}
-    # for page in pages:
-    #     if page.is_stack:
-    #         continue
-    #     if not ('[heap' in page.objfile or '[anon' in page.objfile):
-    #         continue
-    
-    #     # print(page)
-
-    #     mem_data = pwndbg.memory.read(page.vaddr, page.memsz)
-    #     mem_uint64 = list(struct.unpack(f"<{page.memsz // 8}Q", mem_data))
-    #     for i, val in enumerate(mem_uint64):
-    #         addr = page.vaddr + i * 8
-    #         mem_addr_to_data[addr] = val
-    #         if val in mem_data_to_addr:
-    #             mem_data_to_addr[val].append(addr)
-    #         else:
-    #             mem_data_to_addr[val] = [addr]
-
-    # print(len(mem_addr_to_data))
-    # print(len(mem_data_to_addr))
-
-    # for i, key in enumerate(mem_data_to_addr):
-    #     print(f"{key:08x}: {len(mem_data_to_addr[key])}")
-
-
-    ##########
-    ########## ok let's not do this
-    # Read all mapped memory map
-    # mem_pages = {}
-    # for page in pages:
-    #     if not ('[heap' in page.objfile or '[anon' in page.objfile):
-    #         continue
-    #     mem_data = pwndbg.memory.read(page.vaddr, page.memsz)
-    #     mem_uint64 = struct.unpack(f"<{page.memsz // 8}Q", mem_data)
-    #     mem_pages[page.vaddr] = mem_uint64
-
-    # print(len(mem_addr_to_data))
-    # for k, v in enumerate(mem_addr_to_data):
-    #     print(f"  {v:x}: {len(mem_addr_to_data[v])}")
-
-    ##########
 
     def find_in_ram(value):
-        addresses = list(pwndbg.search.search(struct.pack("<Q", value),
+        return list(pwndbg.search.search(struct.pack("<Q", value),
                                          mappings=mappings,
                                          executable=False,
                                          writable=False))
-        # for a in addresses:
-        #     print("FOUND *", hex(a), " == ", hex(value))
-        return addresses
 
-
-        # addresses = []
-        # for page_addr in mem_pages:
-        #     page = mem_pages[page_addr]
-        #     # Do a linear search so we can find all occurrences
-        #     for i, x in enumerate(page):
-        #         if value == x:
-        #             addresses.append(page_addr + i * 8)
-        # return addresses
 
     def find_in_stack(value):
         if value in stack_data_to_addr:
@@ -189,7 +126,7 @@ def findptr(address=None, skip=None):
                     return ret
         elif dig:
             for x in range(256):
-                ret = recurse(addr - 8*x, history.copy(), path.copy(), False, 8*x)
+                ret = recurse(addr - 8*x, history.copy(), path.copy(), False, 8 * x)
                 if ret is not None:
                     return ret
 
@@ -201,7 +138,6 @@ def findptr(address=None, skip=None):
     out = recurse(address, history, path)
     if out is not None:
         found_addr, history_out, path_out = out
-        # print(found_addr)
         for a in found_addr:
             print(f"Found address: 0x{a:x} ($rsp - {hex(pwndbg.regs.rsp - a)})")
 
