@@ -161,7 +161,8 @@ def findptr(address=None, skip=None, max_depth=16, max_lookback=256):
                 chain_pre = "(* (" + hex(offset // 8) + " + " + chain_pre
                 chain_post += "))"
         typename = f"uint64_t {'*' * (len(path_out) + 1)}"
-        print(f"uint64_t stack_diff = $rsp - {hex(pwndbg.regs.rsp - found_addr[0])};")
+        print(f"uint64_t stack_diff = $rsp + {hex(pwndbg.regs.rsp - found_addr[0])};")
+        print(f"uint64_t stack_top_diff = $stack_top - {hex(stack.end - found_addr[0])};")
         print(f"{typename} _varhax = ({typename}) {hex(found_addr[0])};")
         print(f"uint64_t varhax = {chain_pre}{chain_post};")
 
